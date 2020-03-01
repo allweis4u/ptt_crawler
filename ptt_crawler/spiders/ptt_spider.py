@@ -11,14 +11,14 @@ class PttSpider(scrapy.Spider):
     name = "ptt"
 
     def __init__(self):
-        self._dev = True # 開發模式
+        self._dev_mode = True # 開發模式
 
-        self._page = 1
-        #self._start_url = "https://www.ptt.cc/bbs/nCoV2019/index.html"
-        self._start_url = "https://www.ptt.cc/bbs/hotboards.html"
+        self._start_url = "https://www.ptt.cc/bbs/hotboards.html" # 起始網址
+
+        self._skip_num = 0 # 計算跳握的限制日期筆數
 
         parsed_uri = urlparse(self._start_url)
-        self._domain = '{uri.scheme}://{uri.netloc}'.format(uri=parsed_uri)
+        self._domain = '{uri.scheme}://{uri.netloc}'.format(uri=parsed_uri) # 網域
 
         self._conn = pymysql.connect(host=settings.MYSQL_HOST,
             user=settings.MYSQL_USER,
@@ -27,7 +27,7 @@ class PttSpider(scrapy.Spider):
             charset='utf8',
             cursorclass=pymysql.cursors.DictCursor)
         self._cursor = self._conn.cursor()
-        self._seen_urls = self._get_urls()
+        self._seen_urls = self._get_urls() # 已存在url
 
     # 起始呼叫
     def start_requests(self):
@@ -38,23 +38,31 @@ class PttSpider(scrapy.Spider):
     # 擷取熱門看板
     def parse_hotboard(self, response):
         try:
+            count = 0
             hots = response.css(".b-list-container .b-ent")
             for h in hots:
+
                 url = self._domain + h.css('::attr("href")').get()
 
+                # 發送列表頁並記錄超過十八歲的cookie
                 yield scrapy.Request(url, cookies={'over18': '1'}, callback=self.parse_list)
 
-                if self._dev:
+                if self._dev_mode:
                     break
+
+                count += 1
         except Exception as e:
             print(str(e))
+            raise
 
     # 擷取列表頁
     def parse_list(self, response):
 
         try:
+            # 主要區塊
             screens = response.css('.r-ent')
 
+            self._skip_num = 0
             sum = 0
             for scr in screens:
                 # 擷取網址
@@ -75,8 +83,8 @@ class PttSpider(scrapy.Spider):
 
                 sum += 1
 
-            # 有處理筆數繼續往下一頁處理
-            if sum > 0 and self._dev == False:
+            # 有處理到新筆數時繼續往下一頁處理
+            if sum > 0 and self._skip_num != len(screens) and self._dev_mode == False:
                 # 取得上一頁資訊
                 btns = response.css(".btn-group-paging .btn")
                 btn_href = btns[1].css('::attr("href")').get()
@@ -90,88 +98,100 @@ class PttSpider(scrapy.Spider):
                         callback=self.parse_list)
 
         except Exception as e:
-            print(str(e))
+            raise
 
     # 處理內頁資訊
     def parse_detail(self, response):
         #print("@url =", response.url)
+        try:
+            soup = BeautifulSoup(response.text, features='lxml')
 
-        soup = BeautifulSoup(response.text, features='lxml')
+            # 取得上方訊息
+            metas = soup.find("div", id="main-content").find_all("div", class_="article-metaline")
 
-        # 取得上方訊息
-        metas = soup.find("div", id="main-content").find_all("div", class_="article-metaline")
-        
-        if len(metas) == 0:
-            return
+            if len(metas) == 0:
+                return
 
-        # 取得作者資訊
-        author_info = metas[0].find("span", class_="article-meta-value").get_text()
-        
-        # 找出作者名稱和編號
-        pattern = "(.+)\((.*)\)"
-        matches = re.findall(pattern, author_info)
-        author_id = matches[0][0]
-        author_name = matches[0][1]
+            # 取得作者資訊
+            author_info = metas[0].find("span", class_="article-meta-value").get_text()
 
-        # 取得標題
-        title = metas[1].find("span", class_="article-meta-value").get_text()
+            # 找出作者名稱和編號
+            pattern = "(.+)\((.*)\)"
+            matches = re.findall(pattern, author_info)
+            author_id = matches[0][0]
+            author_name = matches[0][1]
 
-        # 取得時間
-        time_info = metas[2].find("span", class_="article-meta-value").get_text()
-        # 將日期轉換成timestamp
-        ts = int(datetime.strptime(time_info, "%a %b %d %H:%M:%S %Y").timestamp())
+            # 取得標題
+            title = metas[1].find("span", class_="article-meta-value").get_text()
 
-        # 取得推文資訊
-        push_infos = soup.find("div", id="main-content").find_all("div", class_="push")
-        pushes = {}
-        for tag in push_infos:
-            userid = tag.find("span", class_="push-userid").get_text()
-            push_content = tag.find("span", class_="push-content").get_text()[2:] # 去除前兩個字元": "
-            push_ipdatetime = tag.find("span", class_="push-ipdatetime").get_text().strip()
+            # 取得發文日期
+            time_info = metas[2].find("span", class_="article-meta-value").get_text()
+            # 將日期轉換成timestamp
+            ts = int(datetime.strptime(time_info, "%a %b %d %H:%M:%S %Y").timestamp())
+
+            '''
+            # 確認時間區間
+            if settings.LIMIT_DATE_START != "":
+                start_ts = datetime.strptime(settings.LIMIT_DATE_START, "%Y-%m-%d").timestamp()
+                if ts < start_ts:
+                    self._skip_num += 1
+                    return None
+            '''
+
+            # 取得推文資訊
+            push_infos = soup.find("div", id="main-content").find_all("div", class_="push")
+            pushes = {}
+            for tag in push_infos:
+                userid = tag.find("span", class_="push-userid").get_text()
+                push_content = tag.find("span", class_="push-content").get_text()[2:] # 去除前兩個字元": "
+                push_ipdatetime = tag.find("span", class_="push-ipdatetime").get_text().strip()
+
+                # 取得標題年分
+                year = time_info.split(" ")[-1]
+
+                # 用正則找出時間
+                matches = re.findall("([0-9]{1,2}\/[0-9]{1,2}) ([0-9]{1,2}:[0-9]{1,2})", push_ipdatetime)
+                push_time = year + "/" + matches[0][0] + " " + matches[0][1]
+                ts = int(datetime.strptime(push_time, "%Y/%m/%d %H:%M").timestamp())
+
+                if userid not in pushes:
+                    pushes[userid] = {}
+
+                # 同時間推文合在一起
+                if ts not in pushes[userid]:
+                    pushes[userid][ts] = [userid, push_content, ts]
+                else:
+                    pushes[userid][ts][1] += push_content
+
+            # 發文內容最後取得，因為要移除tag
+            _main_content = soup.find("div", id="main-content")
+
+            # 移除上方作者的tag
+            for tag in _main_content.find_all("div", class_="article-metaline"):
+                tag.extract()
+            # 移除上方的tag
+            _main_content.find("div", class_="article-metaline-right").extract()
+            # 移除下方推文的tag
+            for tag in _main_content.find_all("div", class_="push"):
+                tag.extract()
+            # 移除下方額外訊息
+            for tag in _main_content.find_all("span", class_="f2"):
+                tag.extract()
+
+            content = _main_content.get_text().strip()
+
+            item = PttCrawlerItem()
+            item["author_id"] = author_id
+            item["author_name"] = author_name
+            item["title"] = title
+            item["published_time"] = ts
+            item["content"] = content
+            item["canonical_url"] = response.url
+            item["pushes"] = pushes
+            yield item
             
-            # 取得標題年分
-            year = time_info.split(" ")[-1]
-
-            tmps = push_ipdatetime.split(" ")
-            push_time = year + "/" + tmps[1] + " " + tmps[2]
-            ts = int(datetime.strptime(push_time, "%Y/%m/%d %H:%M").timestamp())
-            
-            if userid not in pushes:
-                pushes[userid] = {}
-
-            # 同時間推文合在一起
-            if ts not in pushes[userid]:
-                pushes[userid][ts] = [userid, push_content, ts]
-            else:
-                pushes[userid][ts][1] += push_content
-
-
-        # 發文內容最後取得，因為要移除tag
-        _main_content = soup.find("div", id="main-content")
-
-        # 移除上方作者的tag
-        for tag in _main_content.find_all("div", class_="article-metaline"):
-            tag.extract()
-        # 移除上方的tag
-        _main_content.find("div", class_="article-metaline-right").extract()
-        # 移除下方推文的tag
-        for tag in _main_content.find_all("div", class_="push"):
-            tag.extract()
-        # 移除下方額外訊息
-        for tag in _main_content.find_all("span", class_="f2"):
-            tag.extract()
-
-        content = _main_content.get_text().strip()
-
-        item = PttCrawlerItem()
-        item["author_id"] = author_id
-        item["author_name"] = author_name
-        item["title"] = title
-        item["published_time"] = ts
-        item["content"] = content
-        item["canonical_url"] = response.url
-        item["pushes"] = pushes
-        yield item
+        except Exception as e:
+            raise
 
     # 取得資料庫內的網址資訊
     def _get_urls(self):

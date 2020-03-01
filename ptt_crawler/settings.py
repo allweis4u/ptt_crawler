@@ -93,3 +93,7 @@ MYSQL_HOST = "192.168.229.129"
 MYSQL_DBNAME = "ptt"
 MYSQL_USER = "root"
 MYSQL_PASSWORD = "root"
+
+# 擷取限制時間區間，空值代表不限制，尚未使用
+LIMIT_DATE_START = "2020-03-01" # 開始時間
+LIMIT_DATE_END = "2020-03-10" # 結束時間
