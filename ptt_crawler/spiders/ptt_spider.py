@@ -11,7 +11,7 @@ class PttSpider(scrapy.Spider):
     name = "ptt"
 
     def __init__(self):
-        self._dev_mode = True # 開發模式
+        self._dev_mode = False # 開發模式
 
         self._start_url = "https://www.ptt.cc/bbs/hotboards.html" # 起始網址
 
@@ -62,7 +62,6 @@ class PttSpider(scrapy.Spider):
             # 主要區塊
             screens = response.css('.r-ent')
 
-            self._skip_num = 0
             sum = 0
             for scr in screens:
                 # 擷取網址
@@ -84,7 +83,7 @@ class PttSpider(scrapy.Spider):
                 sum += 1
 
             # 有處理到新筆數時繼續往下一頁處理
-            if sum > 0 and self._skip_num != len(screens) and self._dev_mode == False:
+            if sum > 0 and self._dev_mode == False:
                 # 取得上一頁資訊
                 btns = response.css(".btn-group-paging .btn")
                 btn_href = btns[1].css('::attr("href")').get()
