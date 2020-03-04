@@ -11,7 +11,7 @@ class PttSpider(scrapy.Spider):
     name = "ptt"
 
     def __init__(self):
-        self._dev_mode = True # 開發模式
+        self._dev_mode = False # 開發模式
 
         self._start_url = "https://www.ptt.cc/bbs/hotboards.html" # 起始網址
 
