@@ -11,11 +11,11 @@ class PttSpider(scrapy.Spider):
     name = "ptt"
 
     def __init__(self):
-        self._dev_mode = False # 開發模式
+        self._dev_mode = True # 開發模式
 
         self._start_url = "https://www.ptt.cc/bbs/hotboards.html" # 起始網址
 
-        self._skip_num = 0 # 計算跳握的限制日期筆數
+        self._skip_num = 0 # 計算跳過的限制日期筆數
 
         parsed_uri = urlparse(self._start_url)
         self._domain = '{uri.scheme}://{uri.netloc}'.format(uri=parsed_uri) # 網域
@@ -137,30 +137,41 @@ class PttSpider(scrapy.Spider):
                     return None
             '''
 
+            # 取得標題年分
+            start_year = time_info.split(" ")[-1]
+
             # 取得推文資訊
             push_infos = soup.find("div", id="main-content").find_all("div", class_="push")
-            pushes = {}
-            for tag in push_infos:
+            pushes, first_date = {}, None
+            for i in range(len(push_infos)):
+                tag = push_infos[i]
                 userid = tag.find("span", class_="push-userid").get_text()
                 push_content = tag.find("span", class_="push-content").get_text()[2:] # 去除前兩個字元": "
                 push_ipdatetime = tag.find("span", class_="push-ipdatetime").get_text().strip()
 
-                # 取得標題年分
-                year = time_info.split(" ")[-1]
-
                 # 用正則找出時間
                 matches = re.findall("([0-9]{1,2}\/[0-9]{1,2}) ([0-9]{1,2}:[0-9]{1,2})", push_ipdatetime)
-                push_time = year + "/" + matches[0][0] + " " + matches[0][1]
-                ts = int(datetime.strptime(push_time, "%Y/%m/%d %H:%M").timestamp())
+
+                push_date = matches[0][0] + " " + matches[0][1]
+                if i == 0:
+                    first_date = push_date
+
+                # ptt回文沒有年分，如果下一個回應比之前的回應日期早代表是明年的回文
+                if push_date < first_date:
+                    start_year += 1
+                    first_date = push_date
+
+                push_time = start_year + "/" + push_date
+                push_ts = int(datetime.strptime(push_time, "%Y/%m/%d %H:%M").timestamp())
 
                 if userid not in pushes:
                     pushes[userid] = {}
 
                 # 同時間推文合在一起
-                if ts not in pushes[userid]:
-                    pushes[userid][ts] = [userid, push_content, ts]
+                if push_ts not in pushes[userid]:
+                    pushes[userid][push_ts] = [userid, push_content, push_ts]
                 else:
-                    pushes[userid][ts][1] += push_content
+                    pushes[userid][push_ts][1] += push_content
 
             # 發文內容最後取得，因為要移除tag
             _main_content = soup.find("div", id="main-content")

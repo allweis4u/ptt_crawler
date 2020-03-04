@@ -89,7 +89,7 @@ ITEM_PIPELINES = {
 #HTTPCACHE_IGNORE_HTTP_CODES = []
 #HTTPCACHE_STORAGE = 'scrapy.extensions.httpcache.FilesystemCacheStorage'
 
-MYSQL_HOST = "192.168.229.129"
+MYSQL_HOST = "192.168.229.130"
 MYSQL_DBNAME = "ptt"
 MYSQL_USER = "root"
 MYSQL_PASSWORD = "root"
