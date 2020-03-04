@@ -158,10 +158,10 @@ class PttSpider(scrapy.Spider):
 
                 # ptt回文沒有年分，如果下一個回應比之前的回應日期早代表是明年的回文
                 if push_date < first_date:
-                    start_year += 1
+                    start_year = int(start_year) + 1
                     first_date = push_date
 
-                push_time = start_year + "/" + push_date
+                push_time = "{}/{}".format(start_year, push_date)
                 push_ts = int(datetime.strptime(push_time, "%Y/%m/%d %H:%M").timestamp())
 
                 if userid not in pushes:
