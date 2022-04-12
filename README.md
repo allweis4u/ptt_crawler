@@ -1,5 +1,5 @@
 
-# 使用scrapy來做ptt爬蟲擷取
+# 使用scrapy來做ptt爬蟲擷取(練習)
 
 ## 基本說明
 * 從ptt熱門看板開始擷取網站資料，ptt_crawler/settings.py是scrapy的設定檔，可設定擷取網頁間隔時間、DB設定等等。
